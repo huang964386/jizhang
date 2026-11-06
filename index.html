@@ -284,7 +284,7 @@
   .dlg-body{font-size:13.5px;color:#6B5F45;line-height:1.75;text-align:center;margin-bottom:16px;}
   .dlg-body b{color:var(--accent-d);}
   .dlg-foot{display:flex;flex-direction:column;gap:8px;}
-  .dlg-btn{padding:13px 0;border-radius:13px;font-size:14.5px;font-weight:800;background:#F5F2E9;color:#5A4C30;transition:transform .12s;}
+  .dlg-btn{padding:13px 0;border-radius:13px;font-size:14.5px;font-weight:800;background:#F5F2E9;color:#5A4C30;transition:transform .12s;display:block;width:100%;text-align:center;box-sizing:border-box;}
   .dlg-btn:active{transform:scale(.98);}
   .dlg-btn.primary{background:var(--accent-grad2);color:#4A3200;box-shadow:0 5px 14px rgba(224,142,11,.26);}
   body[data-mode="expense"] .dlg-btn.primary{color:#fff;box-shadow:0 5px 14px rgba(206,69,48,.24);}
@@ -375,7 +375,7 @@
   'use strict';
 
   var KEY = 'income-note.v1';
-  var APP_VER = '1.4';
+  var APP_VER = '1.5';
 
   var db = { income: [], expense: [], suggest: [] };
   var mode = 'income';          // income | expense
@@ -602,18 +602,21 @@
   }
 
   /* ---------- 键盘遮挡处理 ---------- */
+  var kbBaseH = 0;   // 弹层打开时的页面高度（此时键盘还没弹出）
+
   function syncKeyboard() {
     var sheet = document.getElementById('sheet');
     var vv = window.visualViewport;
     if (!sheet || !vv) return;
-    var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    if (sheet.classList.contains('on')) {
-      sheet.style.bottom = kb + 'px';
-      sheet.style.maxHeight = Math.max(240, vv.height - 20) + 'px';
-    } else {
+    if (!sheet.classList.contains('on')) {
       sheet.style.bottom = '';
       sheet.style.maxHeight = '';
+      return;
     }
+    var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    if (kb < 40) kb = 0;
+    sheet.style.bottom = kb + 'px';
+    sheet.style.maxHeight = Math.max(240, vv.height - 20) + 'px';
   }
 
   function revealFocused() {
@@ -630,21 +633,20 @@
   function keyboardAssist() {
     clearTimeout(kbTimer);
     var sheet = document.getElementById('sheet');
-    if (!sheet) return;
-    var startH = window.innerHeight;
-    var vv = window.visualViewport;
-    var startVv = vv ? vv.height : startH;
+    if (!sheet || !kbBaseH) return;
     kbTimer = setTimeout(function () {
       if (!sheet.classList.contains('on')) return;
-      var nowVv = vv ? vv.height : window.innerHeight;
-      var shrink = startVv - nowVv;
-      var layoutShrink = startH - window.innerHeight;
-      if (shrink < 120 && layoutShrink < 120) {
-        var lift = Math.round(Math.min(startH * 0.42, 340));
-        sheet.style.bottom = lift + 'px';
-        sheet.style.maxHeight = Math.max(220, startH - lift - 16) + 'px';
-      }
-    }, 480);
+      var vv = window.visualViewport;
+      var layoutShrink = kbBaseH - window.innerHeight;
+      var vvShrink = vv ? (kbBaseH - vv.height) : 0;
+      // 系统已经处理过键盘了（页面变矮或可视区变矮），不要再手动抬
+      if (layoutShrink > 100 || vvShrink > 100) return;
+      // 已经抬过了，不重复抬
+      if (parseFloat(sheet.style.bottom || "0") > 0) return;
+      var lift = Math.round(Math.min(kbBaseH * 0.4, 320));
+      sheet.style.bottom = lift + 'px';
+      sheet.style.maxHeight = Math.max(220, kbBaseH - lift - 16) + 'px';
+    }, 450);
   }
 
   /* ---------- 弹层 ---------- */
@@ -657,6 +659,9 @@
     $('#saveBtn').textContent = rec ? '保存修改' : '保存';
     $('#sheetTitle').textContent = (rec ? '修改' : '记一笔') + cnOf(mode) + '记录';
     renderSug('');
+    $('#sheet').style.bottom = '';
+    $('#sheet').style.maxHeight = '';
+    kbBaseH = window.innerHeight;      // 记录键盘弹出前的页面高度
     $('#mask').classList.add('on');
     $('#sheet').classList.add('on');
     try { history.pushState({ sheet: 1 }, ''); } catch (e) {}
@@ -674,6 +679,7 @@
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     resetDel();
     editingId = null;
+    kbBaseH = 0;
     setTimeout(syncKeyboard, 60);
     if (!fromPop) { try { if (history.state && history.state.sheet) history.back(); } catch (e) {} }
   }
@@ -1238,7 +1244,6 @@
       buttons: [
         { label: '导出 Excel（.xlsx）', cls: 'primary', onClick: exportExcel },
         { label: '从 Excel 导入', file: true },
-        { label: '粘贴文本导入（备忘录）', onClick: openPasteImport },
         { label: '取消', cls: 'plain' }
       ]
     });
